@@ -9722,20 +9722,100 @@ content.appendChild(logoWrap);
 var labelStyle = 'color:#C8A96B;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:14px 14px 4px;font-family:'+FONT+';';
 var selectStyle = 'width:calc(100% - 28px);margin:0 14px 4px;background:rgba(0,0,0,0.25);color:'+WHITE+';border:1px solid rgba(200,169,107,0.45);border-radius:6px;padding:8px 28px 8px 10px;font-size:12px;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;font-family:'+FONT+';background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 10 10\'%3E%3Cpath fill=\'%23fff\' d=\'M1 3l4 4 4-4\'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;';
 
-// ── Neighborhood dropdown ──
+// ── Neighborhood category filter (one Neighborhood panorama, toggle flags only) ──
 var nbLbl = document.createElement('div');
 nbLbl.style.cssText = labelStyle;
 nbLbl.textContent = 'Neighborhood';
 content.appendChild(nbLbl);
 
-var nbButton = document.createElement('button');
-nbButton.type = 'button';
-nbButton.textContent = 'Neighborhood  ›';
-nbButton.style.cssText = selectStyle + 'text-align:left;';
-nbButton.addEventListener('click', function() {
-  openAmbitNode('Neighborhood');
+var nbSel = document.createElement('select');
+nbSel.style.cssText = selectStyle;
+[
+  { label: 'All', value: 'all' },
+  { label: 'Connectivity', value: 'con' },
+  { label: 'Education', value: 'edu' },
+  { label: 'Malls', value: 'malls' },
+  { label: 'Employment Hubs', value: 'emp' },
+  { label: 'Temples', value: 'temp' }
+].forEach(function(item) {
+  var opt = document.createElement('option');
+  opt.value = item.value;
+  opt.textContent = item.label;
+  nbSel.appendChild(opt);
 });
-content.appendChild(nbButton);
+
+var AMBIT_NEIGHBORHOOD_HOTSPOTS = [
+  'hs_con_01','hs_con_02','hs_con_03','hs_con_04','hs_con_05','hs_con_06','hs_con_07',
+  'hs_edu_01','hs_edu_02','hs_edu_03','hs_edu_04','hs_edu_05','hs_edu_06',
+  'hs_malls_01','hs_malls_02','hs_malls_03',
+  'hs_emp_01','hs_emp_02','hs_emp_03','hs_emp_04','hs_emp_05',
+  'hs_temp_01','hs_temp_02','hs_temp_03'
+];
+function applyNeighborhoodFilter(category) {
+  var currentNode = '';
+  try { currentNode = player.getCurrentNode(); } catch (e) {}
+  if (currentNode !== 'node106') return;
+
+  // Pano2VR's setHotspotPropValue API is for custom properties, not visibility.
+  // Use the current panorama's hotspot DOM elements to hide/show each flag.
+  var ids = [];
+  var elements = [];
+  try { ids = player.getPointHotspotIds() || []; } catch (e) {}
+  try { elements = player.getCurrentPointHotspots() || []; } catch (e) {}
+
+  function categoryForId(id) {
+    if (id.indexOf('hs_con_') === 0) return 'con';
+    if (id.indexOf('hs_edu_') === 0) return 'edu';
+    if (id.indexOf('hs_malls_') === 0) return 'malls';
+    if (id.indexOf('hs_emp_') === 0) return 'emp';
+    if (id.indexOf('hs_temp_') === 0) return 'temp';
+    return '';
+  }
+
+  ids.forEach(function(id, index) {
+    var prefix = categoryForId(id);
+    if (!prefix) return;
+    var visible = (category === 'all' || category === prefix);
+    var el = null;
+
+    // Prefer a direct DOM ID match, then fall back to Pano2VR's parallel hotspot list.
+    for (var j = 0; j < elements.length; j++) {
+      var candidate = elements[j];
+      if (!candidate) continue;
+      var candidateId = candidate.id || '';
+      var dataId = '';
+      try { dataId = candidate.getAttribute('data-id') || candidate.getAttribute('data-hotspot-id') || ''; } catch (e) {}
+      if (candidateId === id || candidateId.indexOf(id) !== -1 || dataId === id) {
+        el = candidate;
+        break;
+      }
+    }
+    if (!el && elements.length === ids.length) el = elements[index];
+    if (!el) return;
+
+    if (el.style) {
+      el.style.display = visible ? '' : 'none';
+      el.style.visibility = visible ? '' : 'hidden';
+      el.style.pointerEvents = visible ? '' : 'none';
+    }
+    // Some Pano2VR hotspot elements are wrapped; apply visibility to the wrapper too.
+    if (el.parentElement && el.parentElement.style && el.parentElement.id && el.parentElement.id.indexOf(id) !== -1) {
+      el.parentElement.style.display = visible ? '' : 'none';
+      el.parentElement.style.visibility = visible ? '' : 'hidden';
+      el.parentElement.style.pointerEvents = visible ? '' : 'none';
+    }
+  });
+}
+nbSel.addEventListener('change', function() {
+  // Selecting any category opens Neighborhood if the user is elsewhere.
+  if (player.getCurrentNode() !== 'node106') {
+    openAmbitNode('Neighborhood');
+    setTimeout(function() { applyNeighborhoodFilter(nbSel.value); }, 250);
+  } else {
+    applyNeighborhoodFilter(nbSel.value);
+  }
+});
+content.appendChild(nbSel);
 
 // Divider
 var divNb = document.createElement('div');
@@ -9798,6 +9878,11 @@ groups.forEach(function(g) {
 // ── Sync on node change ──
 player.on('nodechanged', function() {
   var cur = player.getCurrentNode();
+  if (cur === 'node106') {
+    applyNeighborhoodFilter(nbSel.value || 'all');
+  } else {
+    nbSel.selectedIndex = 0;
+  }
   allSelects.forEach(function(sel) {
     var found = false;
     for (var i=0;i<sel.options.length;i++) {
